@@ -366,6 +366,10 @@ type ToolCall struct {
 
 	// Index is the index of the tool call in the message for streaming responses.
 	Index *int `json:"index,omitempty"`
+
+	// ExtraContent is additional content for the tool call.
+	// This field is currently used for passthrough of Gemini model's thought-signatures.
+	ExtraContent json.RawMessage `json:"extra_content,omitempty"`
 }
 
 // FunctionDefinitionParam represents the parameters for a function definition in tool calls.
