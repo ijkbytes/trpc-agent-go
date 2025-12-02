@@ -763,13 +763,25 @@ func audioToBase64(audio *model.Audio) string {
 func (m *Model) convertToolCalls(toolCalls []model.ToolCall) []openai.ChatCompletionMessageToolCallParam {
 	var result []openai.ChatCompletionMessageToolCallParam
 	for _, toolCall := range toolCalls {
-		result = append(result, openai.ChatCompletionMessageToolCallParam{
+		tc := openai.ChatCompletionMessageToolCallParam{
 			ID: toolCall.ID,
 			Function: openai.ChatCompletionMessageToolCallFunctionParam{
 				Name:      toolCall.Function.Name,
 				Arguments: string(toolCall.Function.Arguments),
 			},
-		})
+		}
+		if toolCall.ExtraContent != nil {
+			var extra map[string]any
+			if err := json.Unmarshal([]byte(toolCall.ExtraContent), &extra); err != nil {
+				log.Errorf("failed to unmarshal tool call extra content for %s: %v", toolCall.ID, err)
+			} else {
+				tc.SetExtraFields(map[string]any{
+					"extra_content": extra,
+				})
+			}
+
+		}
+		result = append(result, tc)
 	}
 	return result
 }
@@ -830,6 +842,7 @@ func (m *Model) handleStreamingResponse(
 	acc := openai.ChatCompletionAccumulator{}
 	// Track ID -> Index mapping.
 	idToIndexMap := make(map[string]int)
+	idToExtraContentMap := make(map[string]json.RawMessage)
 	// Aggregate reasoning deltas for final message fallback (some providers don't retain it in accumulator).
 	var reasoningBuf bytes.Buffer
 
@@ -847,6 +860,9 @@ func (m *Model) handleStreamingResponse(
 		// Always accumulate for correctness (tool call deltas are assembled later),
 		// but skip chunks with reasoning content that would cause the SDK accumulator to panic.
 		if !m.hasReasoningContent(chunk.Choices) {
+
+			m.updateToolCallExtraContentMapping(chunk, idToExtraContentMap)
+
 			// Sanitize chunks before feeding them into the upstream accumulator to
 			// avoid known panics when JSON.ToolCalls is marked present but the
 			// typed ToolCalls slice is empty, especially on finish_reason chunks.
@@ -892,7 +908,8 @@ func (m *Model) handleStreamingResponse(
 	}
 
 	// Send final response with usage information if available.
-	m.sendFinalResponse(ctx, stream, acc, idToIndexMap, reasoningBuf.String(), responseChan)
+	m.sendFinalResponse(ctx, stream, acc,
+		idToIndexMap, idToExtraContentMap, reasoningBuf.String(), responseChan)
 
 	// Call the stream complete callback after final response is sent
 	if m.chatStreamCompleteCallback != nil {
@@ -949,6 +966,24 @@ func (m *Model) updateToolCallIndexMapping(chunk openai.ChatCompletionChunk, idT
 		index := int(toolCall.Index)
 		if toolCall.ID != "" {
 			idToIndexMap[toolCall.ID] = index
+		}
+	}
+}
+
+func (m *Model) updateToolCallExtraContentMapping(
+	chunk openai.ChatCompletionChunk,
+	idToExtraContentMap map[string]json.RawMessage,
+) {
+
+	if len(chunk.Choices) > 0 && len(chunk.Choices[0].Delta.ToolCalls) > 0 {
+		for _, toolCall := range chunk.Choices[0].Delta.ToolCalls {
+			if toolCall.ID != "" {
+				extractor := &struct {
+					ExtraContent json.RawMessage `json:"extra_content"`
+				}{}
+				json.Unmarshal([]byte(toolCall.RawJSON()), extractor)
+				idToExtraContentMap[toolCall.ID] = extractor.ExtraContent
+			}
 		}
 	}
 }
@@ -1138,6 +1173,7 @@ func (m *Model) sendFinalResponse(
 	stream *ssestream.Stream[openai.ChatCompletionChunk],
 	acc openai.ChatCompletionAccumulator,
 	idToIndexMap map[string]int,
+	idToExtraContentMap map[string]json.RawMessage,
 	aggregatedReasoning string,
 	responseChan chan<- *model.Response,
 ) {
@@ -1148,7 +1184,7 @@ func (m *Model) sendFinalResponse(
 
 		if len(acc.Choices) > 0 && len(acc.Choices[0].Message.ToolCalls) > 0 {
 			hasToolCall = true
-			accumulatedToolCalls = m.processAccumulatedToolCalls(acc, idToIndexMap)
+			accumulatedToolCalls = m.processAccumulatedToolCalls(acc, idToIndexMap, idToExtraContentMap)
 		}
 
 		// If accumulator is empty but we have aggregated reasoning, create a response with it.
@@ -1206,6 +1242,7 @@ func (m *Model) sendFinalResponse(
 func (m *Model) processAccumulatedToolCalls(
 	acc openai.ChatCompletionAccumulator,
 	idToIndexMap map[string]int,
+	idToExtraContentMap map[string]json.RawMessage,
 ) []model.ToolCall {
 	accumulatedToolCalls := make([]model.ToolCall, 0, len(acc.Choices[0].Message.ToolCalls))
 
@@ -1239,6 +1276,7 @@ func (m *Model) processAccumulatedToolCalls(
 				Name:      toolCall.Function.Name,
 				Arguments: []byte(toolCall.Function.Arguments),
 			},
+			ExtraContent: idToExtraContentMap[toolCall.ID],
 		})
 	}
 
