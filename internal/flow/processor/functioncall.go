@@ -1052,7 +1052,7 @@ func (f *FunctionCallResponseProcessor) consumeStream(
 
 // appendInnerEventContent extracts textual content from an inner event and appends it.
 func (f *FunctionCallResponseProcessor) appendInnerEventContent(ev *event.Event, contents *[]any) {
-	if ev.Response != nil && len(ev.Response.Choices) > 0 {
+	if ev.Response != nil && len(ev.Response.Choices) > 0 && !ev.Response.IsPartial {
 		ch := ev.Response.Choices[0]
 		if ch.Delta.Content != "" {
 			*contents = append(*contents, ch.Delta.Content)
