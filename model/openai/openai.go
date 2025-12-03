@@ -982,7 +982,9 @@ func (m *Model) updateToolCallExtraContentMapping(
 					ExtraContent json.RawMessage `json:"extra_content"`
 				}{}
 				json.Unmarshal([]byte(toolCall.RawJSON()), extractor)
-				idToExtraContentMap[toolCall.ID] = extractor.ExtraContent
+				if extractor.ExtraContent != nil {
+					idToExtraContentMap[toolCall.ID] = extractor.ExtraContent
+				}
 			}
 		}
 	}
