@@ -856,12 +856,11 @@ func (m *Model) handleStreamingResponse(
 
 		// Track ID -> Index mapping when ID is present (first chunk of each tool call).
 		m.updateToolCallIndexMapping(chunk, idToIndexMap)
+		m.updateToolCallExtraContentMapping(chunk, idToExtraContentMap)
 
 		// Always accumulate for correctness (tool call deltas are assembled later),
 		// but skip chunks with reasoning content that would cause the SDK accumulator to panic.
 		if !m.hasReasoningContent(chunk.Choices) {
-
-			m.updateToolCallExtraContentMapping(chunk, idToExtraContentMap)
 
 			// Sanitize chunks before feeding them into the upstream accumulator to
 			// avoid known panics when JSON.ToolCalls is marked present but the
