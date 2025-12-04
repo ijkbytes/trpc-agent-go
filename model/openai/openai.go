@@ -855,7 +855,7 @@ func (m *Model) handleStreamingResponse(
 		}
 
 		// Track ID -> Index mapping when ID is present (first chunk of each tool call).
-		m.updateToolCallIndexMapping(chunk, idToIndexMap)
+		m.updateToolCallIndexMapping(&chunk, idToIndexMap)
 		m.updateToolCallExtraContentMapping(chunk, idToExtraContentMap)
 
 		// Always accumulate for correctness (tool call deltas are assembled later),
@@ -959,7 +959,7 @@ func sanitizeChunkForAccumulator(chunk openai.ChatCompletionChunk) openai.ChatCo
 }
 
 // updateToolCallIndexMapping updates the tool call index mapping.
-func (m *Model) updateToolCallIndexMapping(chunk openai.ChatCompletionChunk, idToIndexMap map[string]int) {
+func (m *Model) updateToolCallIndexMapping(chunk *openai.ChatCompletionChunk, idToIndexMap map[string]int) {
 	if len(chunk.Choices) > 0 && len(chunk.Choices[0].Delta.ToolCalls) > 0 {
 		for i, toolCall := range chunk.Choices[0].Delta.ToolCalls {
 			index := int(toolCall.Index)

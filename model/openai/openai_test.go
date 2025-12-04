@@ -4070,8 +4070,13 @@ func TestToolCallIndexMapping(t *testing.T) {
 					Delta: openai.ChatCompletionChunkChoiceDelta{
 						ToolCalls: []openai.ChatCompletionChunkChoiceDeltaToolCall{
 							{
-								Index: 1,
+								Index: 0,
 								ID:    "call-123",
+								Type:  "function",
+							},
+							{
+								Index: 0,
+								ID:    "call-456",
 								Type:  "function",
 							},
 						},
@@ -4079,8 +4084,10 @@ func TestToolCallIndexMapping(t *testing.T) {
 				},
 			},
 		}
-		m.updateToolCallIndexMapping(chunk, idToIndexMap)
-		assert.Equal(t, 1, idToIndexMap["call-123"])
+		m.updateToolCallIndexMapping(&chunk, idToIndexMap)
+		assert.Equal(t, 0, idToIndexMap["call-123"])
+		assert.Equal(t, 1, idToIndexMap["call-456"])
+		assert.Equal(t, int64(1), chunk.Choices[0].Delta.ToolCalls[1].Index)
 	})
 
 	t.Run("updateToolCallIndexMapping with empty tool calls", func(t *testing.T) {
@@ -4094,7 +4101,7 @@ func TestToolCallIndexMapping(t *testing.T) {
 				},
 			},
 		}
-		m.updateToolCallIndexMapping(chunk, idToIndexMap)
+		m.updateToolCallIndexMapping(&chunk, idToIndexMap)
 		assert.Empty(t, idToIndexMap)
 	})
 
@@ -4103,7 +4110,7 @@ func TestToolCallIndexMapping(t *testing.T) {
 		chunk := openai.ChatCompletionChunk{
 			Choices: []openai.ChatCompletionChunkChoice{},
 		}
-		m.updateToolCallIndexMapping(chunk, idToIndexMap)
+		m.updateToolCallIndexMapping(&chunk, idToIndexMap)
 		assert.Empty(t, idToIndexMap)
 	})
 }
