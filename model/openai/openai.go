@@ -961,10 +961,18 @@ func sanitizeChunkForAccumulator(chunk openai.ChatCompletionChunk) openai.ChatCo
 // updateToolCallIndexMapping updates the tool call index mapping.
 func (m *Model) updateToolCallIndexMapping(chunk openai.ChatCompletionChunk, idToIndexMap map[string]int) {
 	if len(chunk.Choices) > 0 && len(chunk.Choices[0].Delta.ToolCalls) > 0 {
-		toolCall := chunk.Choices[0].Delta.ToolCalls[0]
-		index := int(toolCall.Index)
-		if toolCall.ID != "" {
-			idToIndexMap[toolCall.ID] = index
+		for i, toolCall := range chunk.Choices[0].Delta.ToolCalls {
+			index := int(toolCall.Index)
+
+			// fix for index is all zero
+			if index == 0 && i > 0 {
+				index = i
+				chunk.Choices[0].Delta.ToolCalls[i].Index = int64(i)
+			}
+
+			if toolCall.ID != "" {
+				idToIndexMap[toolCall.ID] = index
+			}
 		}
 	}
 }
