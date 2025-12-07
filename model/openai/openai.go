@@ -828,6 +828,15 @@ func buildToolDescription(declaration *tool.Declaration) string {
 	return desc
 }
 
+func writeFile(chunk openai.ChatCompletionChunk) {
+	f, err := os.OpenFile(chunk.ID+".txt", os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644)
+	if err != nil {
+		fmt.Println(err.Error())
+	}
+
+	io.Copy(f, bytes.NewReader([]byte(chunk.RawJSON()+"\n\n")))
+}
+
 // handleStreamingResponse handles streaming chat completion responses.
 func (m *Model) handleStreamingResponse(
 	ctx context.Context,
@@ -842,6 +851,7 @@ func (m *Model) handleStreamingResponse(
 	acc := openai.ChatCompletionAccumulator{}
 	// Track ID -> Index mapping.
 	idToIndexMap := make(map[string]int)
+	nextIndex := 0
 	idToExtraContentMap := make(map[string]json.RawMessage)
 	// Aggregate reasoning deltas for final message fallback (some providers don't retain it in accumulator).
 	var reasoningBuf bytes.Buffer
@@ -855,7 +865,7 @@ func (m *Model) handleStreamingResponse(
 		}
 
 		// Track ID -> Index mapping when ID is present (first chunk of each tool call).
-		m.updateToolCallIndexMapping(&chunk, idToIndexMap)
+		m.updateToolCallIndexMapping(&chunk, idToIndexMap, &nextIndex)
 		m.updateToolCallExtraContentMapping(chunk, idToExtraContentMap)
 
 		// Always accumulate for correctness (tool call deltas are assembled later),
@@ -959,20 +969,31 @@ func sanitizeChunkForAccumulator(chunk openai.ChatCompletionChunk) openai.ChatCo
 }
 
 // updateToolCallIndexMapping updates the tool call index mapping.
-func (m *Model) updateToolCallIndexMapping(chunk *openai.ChatCompletionChunk, idToIndexMap map[string]int) {
+func (m *Model) updateToolCallIndexMapping(
+	chunk *openai.ChatCompletionChunk,
+	idToIndexMap map[string]int,
+	nextIndex *int,
+) {
 	if len(chunk.Choices) > 0 && len(chunk.Choices[0].Delta.ToolCalls) > 0 {
 		for i, toolCall := range chunk.Choices[0].Delta.ToolCalls {
+			if toolCall.ID == "" {
+				continue
+			}
+
+			if _, ok := idToIndexMap[toolCall.ID]; ok {
+				continue
+			}
+
 			index := int(toolCall.Index)
 
 			// fix for index is all zero
-			if index == 0 && i > 0 {
-				index = i
-				chunk.Choices[0].Delta.ToolCalls[i].Index = int64(i)
+			if index == 0 && *nextIndex > 0 {
+				index = *nextIndex
+				*nextIndex++
+				chunk.Choices[0].Delta.ToolCalls[i].Index = int64(index)
 			}
 
-			if toolCall.ID != "" {
-				idToIndexMap[toolCall.ID] = index
-			}
+			idToIndexMap[toolCall.ID] = index
 		}
 	}
 }
