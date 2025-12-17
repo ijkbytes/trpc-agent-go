@@ -987,7 +987,7 @@ func (m *Model) updateToolCallIndexMapping(
 			index := int(toolCall.Index)
 
 			// fix for index is all zero
-			if index == 0 && *nextIndex > 0 {
+			if index == 0 {
 				index = *nextIndex
 				*nextIndex++
 				chunk.Choices[0].Delta.ToolCalls[i].Index = int64(index)
