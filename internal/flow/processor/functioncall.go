@@ -12,6 +12,7 @@ package processor
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"sync"
@@ -41,6 +42,9 @@ const (
 	// ErrorMarshalResult is the error message for failed to marshal result.
 	ErrorMarshalResult = "Error: failed to marshal result"
 )
+
+// Timeout for event completion signaling.
+const eventCompletionTimeout = 5 * time.Second
 
 // summarizationSkipper is implemented by tools that can indicate whether
 // the flow should skip a post-tool summarization step. This allows tools
@@ -187,7 +191,31 @@ func (p *FunctionCallResponseProcessor) handleFunctionCallsAndSendEvent(
 		))
 		return nil, err
 	}
+
+	return p.emitFunctionCallResponseEventAndWait(
+		ctx,
+		invocation,
+		functionResponseEvent,
+		eventChan,
+	)
+}
+
+func (p *FunctionCallResponseProcessor) emitFunctionCallResponseEventAndWait(
+	ctx context.Context,
+	invocation *agent.Invocation,
+	functionResponseEvent *event.Event,
+	eventChan chan<- *event.Event) (*event.Event, error) {
+
+	if !functionResponseEvent.RequiresCompletion {
+		functionResponseEvent.RequiresCompletion = true
+	}
 	agent.EmitEvent(ctx, invocation, eventChan, functionResponseEvent)
+
+	completionID := agent.GetAppendEventNoticeKey(functionResponseEvent.ID)
+	err := invocation.AddNoticeChannelAndWait(ctx, completionID, eventCompletionTimeout)
+	if errors.Is(err, context.Canceled) {
+		return nil, err
+	}
 	return functionResponseEvent, nil
 }
 

@@ -453,9 +453,9 @@ func (at *Tool) StreamableCall(ctx context.Context, jsonArgs []byte) (*tool.Stre
 				_ = stream.Writer.Send(tool.StreamChunk{Content: fmt.Sprintf("agent tool run error: %v", err)}, nil)
 				return
 			}
-			wrapped := at.wrapWithCompletion(subCtx, subInv, evCh)
+			// wrapped := at.wrapWithCompletion(subCtx, subInv, evCh)
 
-			for ev := range wrapped {
+			for ev := range evCh {
 				if stream.Writer.Send(tool.StreamChunk{Content: ev}, nil) {
 					return
 				}
